@@ -27,15 +27,25 @@
 #pragma once
 
 #include <string>
+#include <utility>
 
 #include "include/mtkahypartypes.h"
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/partition/context_enum_classes.h"
-#include "mt-kahypar/utils/cast.h"
 
 namespace mt_kahypar {
 namespace io {
+
+std::pair<mt_kahypar_hypergraph_t, mt_kahypar_partitioned_hypergraph_t> readInputFile(
+    const std::string& graph_filename,
+    const std::string& partition_filename,
+    const PartitionID num_blocks,
+    const PresetType& preset,
+    const InstanceType& instance,
+    const FileFormat& format,
+    const bool stable_construction = false,
+    const bool remove_single_pin_hes = true);
 
 mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const PresetType& preset,

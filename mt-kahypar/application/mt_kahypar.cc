@@ -37,7 +37,6 @@
 #include "mt-kahypar/partition/registries/registry.h"
 #include "mt-kahypar/partition/conversion.h"
 #include "mt-kahypar/partition/mapping/target_graph.h"
-#include "mt-kahypar/utils/cast.h"
 #include "mt-kahypar/utils/delete.h"
 #include "mt-kahypar/utils/randomize.h"
 #include "mt-kahypar/utils/utilities.h"
@@ -100,16 +99,6 @@ int main(int argc, char* argv[]) {
     hwloc_bitmap_free(cpuset);
   #endif
 
-  // Read Hypergraph
-  utils::Timer& timer =
-    utils::Utilities::instance().getTimer(context.utility_id);
-  timer.start_timer("io_hypergraph", "I/O Hypergraph");
-  mt_kahypar_hypergraph_t hypergraph = io::readInputFile(
-      context.partition.graph_filename, context.partition.preset_type,
-      context.partition.instance_type, context.partition.file_format,
-      context.preprocessing.stable_construction_of_incident_edges);
-  timer.stop_timer("io_hypergraph");
-
   // Read Target Graph
   std::unique_ptr<TargetGraph> target_graph;
   if ( context.partition.objective == Objective::steiner_tree ) {
@@ -122,21 +111,55 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if ( context.partition.fixed_vertex_filename != "" ) {
-    timer.start_timer("read_fixed_vertices", "Read Fixed Vertex File");
-    io::addFixedVerticesFromFile(hypergraph,
-      context.partition.fixed_vertex_filename, context.partition.k);
-    timer.stop_timer("read_fixed_vertices");
+  utils::Timer& timer = utils::Utilities::instance().getTimer(context.utility_id);
+  HighResClockTimepoint start;
+
+  mt_kahypar_hypergraph_t hypergraph;
+  mt_kahypar_partitioned_hypergraph_t partitioned_hypergraph;
+  if ( context.partition.graph_initial_partition_filename != "" ) {
+    // Read Partitioned Hypergraph
+    timer.start_timer("io_hypergraph", "I/O Hypergraph");
+    std::tie(hypergraph, partitioned_hypergraph) = io::readInputFile(
+      context.partition.graph_filename,
+      context.partition.graph_initial_partition_filename, context.partition.k,
+      context.partition.preset_type, context.partition.instance_type, context.partition.file_format,
+      context.preprocessing.stable_construction_of_incident_edges
+    );
+    timer.stop_timer("io_hypergraph");
+
+    // Initialize Memory Pool and Algorithm/Policy Registries
+    register_memory_pool(hypergraph, context);
+    register_algorithms_and_policies();
+
+    // Improve Hypergraph Partition
+    context.partition.num_vcycles = std::max<size_t>(1, context.partition.num_vcycles);
+    start = std::chrono::high_resolution_clock::now();
+    PartitionerFacade::improve(partitioned_hypergraph, context, target_graph.get());
+  } else {
+    // Read Hypergraph
+    timer.start_timer("io_hypergraph", "I/O Hypergraph");
+    hypergraph = io::readInputFile(
+      context.partition.graph_filename, context.partition.preset_type,
+      context.partition.instance_type, context.partition.file_format,
+      context.preprocessing.stable_construction_of_incident_edges);
+    timer.stop_timer("io_hypergraph");
+
+    if ( context.partition.fixed_vertex_filename != "" ) {
+      timer.start_timer("read_fixed_vertices", "Read Fixed Vertex File");
+      io::addFixedVerticesFromFile(hypergraph,
+        context.partition.fixed_vertex_filename, context.partition.k);
+      timer.stop_timer("read_fixed_vertices");
+    }
+
+    // Initialize Memory Pool and Algorithm/Policy Registries
+    register_memory_pool(hypergraph, context);
+    register_algorithms_and_policies();
+
+    // Partition Hypergraph
+    start = std::chrono::high_resolution_clock::now();
+    partitioned_hypergraph = PartitionerFacade::partition(hypergraph, context, target_graph.get());
   }
 
-  // Initialize Memory Pool and Algorithm/Policy Registries
-  register_memory_pool(hypergraph, context);
-  register_algorithms_and_policies();
-
-  // Partition Hypergraph
-  HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
-  mt_kahypar_partitioned_hypergraph_t partitioned_hypergraph =
-    PartitionerFacade::partition(hypergraph, context, target_graph.get());
   HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
 
   // Print Stats

@@ -26,15 +26,96 @@
 
 #include "hypergraph_factory.h"
 
+#include <unordered_set>
+
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/datastructures/fixed_vertex_support.h"
 #include "mt-kahypar/partition/conversion.h"
+#include "mt-kahypar/utils/cast.h"
 #include "mt-kahypar/utils/exception.h"
 
 namespace mt_kahypar {
 namespace io {
+
+namespace {
+
+HypernodeID numberOfNodes(mt_kahypar_hypergraph_t hypergraph) {
+  switch ( hypergraph.type ) {
+    case STATIC_HYPERGRAPH: return utils::cast<ds::StaticHypergraph>(hypergraph).initialNumNodes();
+    ENABLE_GRAPHS(case STATIC_GRAPH: return utils::cast<ds::StaticGraph>(hypergraph).initialNumNodes();)
+    ENABLE_HIGHEST_QUALITY(case DYNAMIC_HYPERGRAPH: return utils::cast<ds::DynamicHypergraph>(hypergraph).initialNumNodes();)
+    ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(case DYNAMIC_GRAPH: return utils::cast<ds::DynamicGraph>(hypergraph).initialNumNodes();)
+    case NULLPTR_HYPERGRAPH: return 0;
+    default: return 0;
+  }
+}
+
+template<typename PartitionedHypergraph, typename Hypergraph>
+mt_kahypar_partitioned_hypergraph_t create_partitioned_hypergraph(Hypergraph& hg,
+                                                                  const mt_kahypar_partition_id_t num_blocks,
+                                                                  const mt_kahypar_partition_id_t* partition) {
+  PartitionedHypergraph partitioned_hg(num_blocks, hg, parallel_tag_t { });
+  const mt_kahypar::HypernodeID num_nodes = hg.initialNumNodes();
+  tbb::parallel_for(ID(0), num_nodes, [&](const mt_kahypar::HypernodeID& hn) {
+    partitioned_hg.setOnlyNodePart(hn, partition[hn]);
+  });
+  partitioned_hg.initializePartition();
+
+  return mt_kahypar_partitioned_hypergraph_t { reinterpret_cast<mt_kahypar_partitioned_hypergraph_s*>(
+    new PartitionedHypergraph(std::move(partitioned_hg))), PartitionedHypergraph::TYPE };
+}
+
+mt_kahypar_partitioned_hypergraph_t create_partitioned_hypergraph(mt_kahypar_hypergraph_t hypergraph,
+                                                                  const mt_kahypar_partition_id_t num_blocks,
+                                                                  const mt_kahypar_partition_id_t* partition) {
+  switch ( hypergraph.type ) {
+    case STATIC_HYPERGRAPH:
+      return create_partitioned_hypergraph<StaticPartitionedHypergraph>(
+        utils::cast<ds::StaticHypergraph>(hypergraph), num_blocks, partition);
+    ENABLE_GRAPHS(case STATIC_GRAPH:
+      return create_partitioned_hypergraph<StaticPartitionedGraph>(
+        utils::cast<ds::StaticGraph>(hypergraph),num_blocks, partition);)
+    ENABLE_HIGHEST_QUALITY(case DYNAMIC_HYPERGRAPH:
+      return create_partitioned_hypergraph<DynamicPartitionedHypergraph>(
+        utils::cast<ds::DynamicHypergraph>(hypergraph), num_blocks, partition);)
+    ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(case DYNAMIC_GRAPH:
+      return create_partitioned_hypergraph<DynamicPartitionedGraph>(
+        utils::cast<ds::DynamicGraph>(hypergraph), num_blocks, partition);)
+    default:
+      throw InvalidParameterException("Invalid (hyper)graph type.");
+  }
+}
+
+}
+
+std::pair<mt_kahypar_hypergraph_t, mt_kahypar_partitioned_hypergraph_t> readInputFile(
+  const std::string& graph_filename,
+  const std::string& partition_filename,
+  const PartitionID num_blocks,
+  const PresetType& preset,
+  const InstanceType& instance,
+  const FileFormat& format,
+  const bool stable_construction,
+  const bool remove_single_pin_hes) {
+  mt_kahypar_hypergraph_t hypergraph = io::readInputFile(graph_filename,
+    preset, instance, format, stable_construction, remove_single_pin_hes);
+
+  std::vector<PartitionID> partition;
+  io::readPartitionFile(partition_filename, numberOfNodes(hypergraph), partition);
+
+  PartitionID actual_num_blocks = std::unordered_set<PartitionID>(partition.begin(), partition.end()).size();
+  if ( actual_num_blocks != num_blocks ) {
+    throw InvalidInputException("Given number of blocks (" + STR(num_blocks) +
+      ") does not equal the actual number of blocks (" + STR(actual_num_blocks) + ")");
+  }
+
+  mt_kahypar_partitioned_hypergraph_t partitioned_hypergraph = create_partitioned_hypergraph(
+    hypergraph, num_blocks, partition.data());
+
+  return {hypergraph, partitioned_hypergraph};
+}
 
 namespace {
 
@@ -174,17 +255,6 @@ Hypergraph readInputFile(const std::string& filename,
 }
 
 namespace {
-
-HypernodeID numberOfNodes(mt_kahypar_hypergraph_t hypergraph) {
-  switch ( hypergraph.type ) {
-    case STATIC_HYPERGRAPH: return utils::cast<ds::StaticHypergraph>(hypergraph).initialNumNodes();
-    ENABLE_GRAPHS(case STATIC_GRAPH: return utils::cast<ds::StaticGraph>(hypergraph).initialNumNodes();)
-    ENABLE_HIGHEST_QUALITY(case DYNAMIC_HYPERGRAPH: return utils::cast<ds::DynamicHypergraph>(hypergraph).initialNumNodes();)
-    ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(case DYNAMIC_GRAPH: return utils::cast<ds::DynamicGraph>(hypergraph).initialNumNodes();)
-    case NULLPTR_HYPERGRAPH: return 0;
-    default: return 0;
-  }
-}
 
 template<typename Hypergraph>
 void addFixedVertices(Hypergraph& hypergraph,

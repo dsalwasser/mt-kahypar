@@ -77,6 +77,9 @@ namespace mt_kahypar {
             ("fixed,f",
              po::value<std::string>(&context.partition.fixed_vertex_filename)->value_name("<string>"),
              "Fixed vertex filename")
+            ("initial-partition",
+             po::value<std::string>(&context.partition.graph_initial_partition_filename)->value_name("<string>"),
+             "Initial partition filename")
             ("write-partition-file",
              po::value<bool>(&context.partition.write_partition_file)->value_name("<bool>")->default_value(false),
              "If true, then partition output file is generated")
