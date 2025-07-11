@@ -1,4 +1,5 @@
 .idea
+CMakeUserPresets.json
 cmake-build-debug/*
 clang-debug/*
 *.hpp~
