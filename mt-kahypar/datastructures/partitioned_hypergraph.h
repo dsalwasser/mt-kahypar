@@ -166,6 +166,11 @@ class PartitionedHypergraph {
 
   // ####################### General Hypergraph Stats ######################
 
+  const Hypergraph& hypergraph() const {
+    ASSERT(_hg);
+    return *_hg;
+  }
+
   Hypergraph& hypergraph() {
     ASSERT(_hg);
     return *_hg;

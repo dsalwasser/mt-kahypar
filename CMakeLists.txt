@@ -354,7 +354,9 @@ FetchContent_Populate(
   WHFC QUIET EXLUDE_FROM_ALL
   GIT_REPOSITORY https://github.com/larsgottesbueren/WHFC.git
   GIT_TAG        ${KAHYPAR_WHFC_TAG}
+  PATCH_COMMAND  ${GIT_EXECUTABLE} apply ${CMAKE_CURRENT_SOURCE_DIR}/cmake/WHFC.patch
   SOURCE_DIR     external_tools/WHFC
+  UPDATE_DISCONNECTED TRUE
 )
 target_include_directories(MtKaHyPar-Include INTERFACE
                            ${CMAKE_CURRENT_BINARY_DIR}/external_tools/kahypar-shared-resources

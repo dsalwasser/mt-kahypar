@@ -626,6 +626,10 @@ namespace mt_kahypar {
              "Flow Algorithms:\n"
              "- do_nothing\n"
              "- flow_cutter")
+             ((initial_partitioning ? "i-r-flow-rebalancing" : "r-flow-rebalancing"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.flows.rebalancing :
+                      &context.refinement.flows.rebalancing))->value_name("<bool>"),
+             "If true, flow rebalancing is enabled")
             ((initial_partitioning ? "i-r-flow-parallel-search-multiplier" : "r-flow-parallel-search-multiplier"),
              po::value<double>((initial_partitioning ? &context.initial_partitioning.refinement.flows.parallel_searches_multiplier :
                       &context.refinement.flows.parallel_searches_multiplier))->value_name("<double>"),

@@ -51,6 +51,8 @@ class FlowRefiner final : public IFlowRefiner {
   static constexpr bool debug = false;
 
   using PartitionedHypergraph = typename GraphAndGainTypes::PartitionedHypergraph;
+  using Hypergraph = typename GraphAndGainTypes::Hypergraph;
+  using GainCache = typename GraphAndGainTypes::GainCache;
 
  public:
   explicit FlowRefiner(const HyperedgeID num_hyperedges,
@@ -130,5 +132,8 @@ class FlowRefiner final : public IFlowRefiner {
   vec<HypernodeID> _whfc_to_node;
   SequentialConstruction<GraphAndGainTypes> _sequential_construction;
   ParallelConstruction<GraphAndGainTypes> _parallel_construction;
+
+  HyperedgeWeight _rebalanced_gain;
+  vec<Move> _rebalanced_moves;
 };
 }  // namespace mt_kahypar
