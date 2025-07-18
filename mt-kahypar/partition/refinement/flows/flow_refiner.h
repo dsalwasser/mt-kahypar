@@ -133,6 +133,9 @@ class FlowRefiner final : public IFlowRefiner {
   SequentialConstruction<GraphAndGainTypes> _sequential_construction;
   ParallelConstruction<GraphAndGainTypes> _parallel_construction;
 
+  size_t _total_iteration;
+  size_t _rebalanced_result_iteration;
+  HyperedgeWeight _rebalanced_value;
   HyperedgeWeight _rebalanced_gain;
   vec<Move> _rebalanced_moves;
 };

@@ -75,9 +75,16 @@ MoveSequence FlowRefiner<GraphAndGainTypes>::refineImpl(mt_kahypar_partitioned_h
 
       // Extract move sequence
       if (_rebalanced_gain > 0 && _rebalanced_gain > expected_gain) {
+        DBG << "Found a balanced cut for block pair" << _block_0 << "and" << _block_1
+            << "with global value" << _rebalanced_value << "( expected gain:" << _rebalanced_gain << ")"
+            << "through rebalancing in iteration" << _rebalanced_result_iteration << "of" << _total_iteration;
+
         sequence.expected_improvement = _rebalanced_gain;
         sequence.moves = std::move(_rebalanced_moves);
       } else if ( improved_solution ) {
+        DBG << "Found a balanced cut for block pair" << _block_0 << "and" << _block_1
+            << "with local value" << new_cut << "( expected gain:" << expected_gain << ")";
+
         sequence.expected_improvement = expected_gain;
         for ( const whfc::Node& u : _flow_hg.nodeIDs() ) {
           const HypernodeID hn = _whfc_to_node[u];
@@ -118,15 +125,17 @@ bool FlowRefiner<GraphAndGainTypes>::runFlowCutter(const FlowProblem& flow_probl
     phg.setNodePart(u, _phg->partID(u));
   }
 
-  GainCache gain_cache;
-  gain_cache.initializeGainCache(phg);
+  bool rebalanced_result = false;
 
-  HyperedgeWeight initial_quality = metrics::quality(phg, _context, !sequential);
-  AdvancedRebalancer<GraphAndGainTypes> rebalancer(hg.initialNumNodes(), _context, gain_cache);
+  size_t total_iteration = 0;
+  size_t rebalanced_result_iteration = 0;
 
+  HyperedgeWeight best_rebalanced_value = 0;
   HyperedgeWeight best_rebalanced_gain = 0;
   vec<Move> best_rebalanced_moves;
 
+  GainCache gain_cache;
+  gain_cache.initializeGainCache(phg);
   const auto apply_preliminary_moves = [&] {
     HyperedgeWeight gain = 0;
 
@@ -153,16 +162,22 @@ bool FlowRefiner<GraphAndGainTypes>::runFlowCutter(const FlowProblem& flow_probl
     return gain;
   };
 
+  const HyperedgeWeight initial_quality = metrics::quality(phg, _context, !sequential);
+  AdvancedRebalancer<GraphAndGainTypes> rebalancer(hg.initialNumNodes(), _context, gain_cache);
+  HyperedgeWeight current_quality = initial_quality;
+
+  vec<Move> moves;
+  ds::Bitset moved_nodes(hg.initialNumNodes());
+
   const auto rebalance = [&] {
     const HyperedgeWeight gain = apply_preliminary_moves();
-    initial_quality -= gain;
-    ASSERT(initial_quality == metrics::quality(phg, _context, !sequential));
+    current_quality -= gain;
+    ASSERT(current_quality == metrics::quality(phg, _context, !sequential));
 
     Metrics tmp_metrics;
-    tmp_metrics.quality = initial_quality;
+    tmp_metrics.quality = current_quality;
     tmp_metrics.imbalance = metrics::imbalance(phg, _context);
 
-    vec<Move> moves;
     mt_kahypar_partitioned_hypergraph_t phg_prime = utils::partitioned_hg_cast(phg);
     const bool balanced = rebalancer.refineAndOutputMovesLinear(phg_prime, {}, moves, tmp_metrics, 0.0);
 
@@ -172,18 +187,47 @@ bool FlowRefiner<GraphAndGainTypes>::runFlowCutter(const FlowProblem& flow_probl
     for (const Move &move : moves) {
       phg.changeNodePart(gain_cache, move.node, move.to, move.from);
     }
-    ASSERT(initial_quality == metrics::quality(phg, _context, !sequential));
+    ASSERT(current_quality == metrics::quality(phg, _context, !sequential));
 
     const HyperedgeWeight rebalanced_gain = initial_quality - rebalanced_quality;
     if (balanced && rebalanced_gain > best_rebalanced_gain) {
+      rebalanced_result = true;
+      rebalanced_result_iteration = total_iteration;
+
+      best_rebalanced_value = rebalanced_quality;
       best_rebalanced_gain = rebalanced_gain;
-      best_rebalanced_moves = std::move(moves);
+
+      best_rebalanced_moves.clear();
+      moved_nodes.reset();
+      for (const Move &move : moves) {
+        const HypernodeID hn = move.node;
+        moved_nodes.set(move.node);
+
+        const PartitionID from = _phg->partID(hn);
+        const PartitionID to = move.to;
+        if (from != to) {
+          best_rebalanced_moves.emplace_back(from, to, hn);
+        }
+      }
+
+      for (const whfc::Node &u : _flow_hg.nodeIDs()) {
+        const HypernodeID hn = _whfc_to_node[u];
+        if (hn == kInvalidHypernode || moved_nodes.isSet(hn)) {
+          continue;
+        }
+
+        const PartitionID from = _phg->partID(hn);
+        const PartitionID to = phg.partID(hn);
+        if (from != to) {
+          best_rebalanced_moves.emplace_back(from, to, hn);
+        }
+      }
     }
   };
 
   size_t iteration = 0;
   const auto reached_time_limit = [&] {
-    if (iteration == 25) {
+    if (++iteration == 25) {
       iteration = 0;
 
       const double elapsed = RUNNING_TIME(start);
@@ -196,43 +240,69 @@ bool FlowRefiner<GraphAndGainTypes>::runFlowCutter(const FlowProblem& flow_probl
     return false;
   };
 
+  const HyperedgeWeight total_weight = _flow_hg.totalNodeWeight();
+  const HyperedgeWeight max_block0_weight = _context.partition.max_part_weights[_block_0];
+  const HyperedgeWeight max_block1_weight = _context.partition.max_part_weights[_block_1];
+
   const auto on_cut = [&](const auto &cs) {
+    const HyperedgeWeight cut_value = cs.flow_algo.flow_value;
+    DBG << "Found a cut for block pair" << _block_0 << "and" << _block_1 << "with local value"
+        << cut_value;
+
+    total_iteration += 1;
     if (reached_time_limit()) {
       return false;
     }
 
-    if (!cs.isBalanced() && _context.refinement.flows.rebalancing) {
-      rebalance();
+    if(cs.isBalanced()) {
+      DBG << "Found cut for block pair" << _block_0 << "and" << _block_1 << "is a balanced cut";
+    } else {
+      if (_context.refinement.flows.rebalancing) {
+        rebalance();
+      }
+
+      if (cs.side_to_pierce == 0) {
+        const HyperedgeWeight source_side_weight = cs.source_reachable_weight;
+        DBG << "Piercing on source-side (" << source_side_weight << "/" << max_block0_weight << ", "
+            << (total_weight - source_side_weight) << "/" << max_block1_weight << ")";
+      } else {
+        const HyperedgeWeight sink_side_weight = cs.target_reachable_weight;
+        DBG << "Piercing on sink-side (" << sink_side_weight << "/" << max_block1_weight << ", "
+            << (total_weight - sink_side_weight) << "/" << max_block0_weight << ")";
+      }
     }
 
     return true;
   };
 
+  DBG << "Starting refinement for block pair" << _block_0 << "and" << _block_1
+      << "with an initial local cut of " << flow_problem.total_cut
+      << "( global cut:" << initial_quality << ")";
+
   bool result = false;
   if (sequential) {
-    _sequential_hfc.cs.setMaxBlockWeight(0, std::max(
-            flow_problem.weight_of_block_0, _context.partition.max_part_weights[_block_0]));
-    _sequential_hfc.cs.setMaxBlockWeight(1, std::max(
-            flow_problem.weight_of_block_1, _context.partition.max_part_weights[_block_1]));
+    _sequential_hfc.cs.setMaxBlockWeight(0, std::max(flow_problem.weight_of_block_0, max_block0_weight));
+    _sequential_hfc.cs.setMaxBlockWeight(1, std::max(flow_problem.weight_of_block_1, max_block1_weight));
 
     _sequential_hfc.reset();
     _sequential_hfc.setFlowBound(flow_problem.total_cut - flow_problem.non_removable_cut);
     result = _sequential_hfc.enumerateCutsUntilBalancedOrFlowBoundExceeded(flow_problem.source, flow_problem.sink, on_cut);
   } else {
-    _parallel_hfc.cs.setMaxBlockWeight(0, std::max(
-            flow_problem.weight_of_block_0, _context.partition.max_part_weights[_block_0]));
-    _parallel_hfc.cs.setMaxBlockWeight(1, std::max(
-            flow_problem.weight_of_block_1, _context.partition.max_part_weights[_block_1]));
+    _parallel_hfc.cs.setMaxBlockWeight(0, std::max(flow_problem.weight_of_block_0, max_block0_weight));
+    _parallel_hfc.cs.setMaxBlockWeight(1, std::max(flow_problem.weight_of_block_1, max_block1_weight));
 
     _parallel_hfc.reset();
     _parallel_hfc.setFlowBound(flow_problem.total_cut - flow_problem.non_removable_cut);
     result = _parallel_hfc.enumerateCutsUntilBalancedOrFlowBoundExceeded(flow_problem.source, flow_problem.sink, on_cut);
   }
 
+  _total_iteration = total_iteration;
+  _rebalanced_result_iteration = rebalanced_result_iteration;
+  _rebalanced_value = best_rebalanced_value;
   _rebalanced_gain = best_rebalanced_gain;
   _rebalanced_moves = std::move(best_rebalanced_moves);
 
-  return result;
+  return result || rebalanced_result;
 }
 
 template<typename GraphAndGainTypes>
