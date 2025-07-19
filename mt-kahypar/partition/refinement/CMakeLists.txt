@@ -15,10 +15,10 @@ set(RefinementSources
         flows/scheduler.cpp
         flows/quotient_graph.cpp
         flows/flow_refiner.cpp
+        flows/flow_rebalancer.cpp
         flows/sequential_construction.cpp
         flows/parallel_construction.cpp
-        flows/flow_hypergraph_builder.cpp
-        )
+        flows/flow_hypergraph_builder.cpp)
 
 set(Km1Sources
         gains/km1/km1_gain_cache.cpp)

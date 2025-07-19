@@ -35,12 +35,10 @@
 
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/refinement/flows/i_flow_refiner.h"
-#include "mt-kahypar/datastructures/sparse_map.h"
-#include "mt-kahypar/datastructures/thread_safe_fast_reset_flag_array.h"
-#include "mt-kahypar/parallel/stl/scalable_queue.h"
 #include "mt-kahypar/partition/refinement/flows/sequential_construction.h"
 #include "mt-kahypar/partition/refinement/flows/parallel_construction.h"
 #include "mt-kahypar/partition/refinement/flows/flow_hypergraph_builder.h"
+#include "mt-kahypar/partition/refinement/flows/flow_rebalancer.h"
 #include "mt-kahypar/utils/cast.h"
 
 namespace mt_kahypar {
@@ -67,7 +65,8 @@ class FlowRefiner final : public IFlowRefiner {
     _parallel_hfc(_flow_hg, context.partition.seed),
     _whfc_to_node(),
     _sequential_construction(num_hyperedges, _flow_hg, _sequential_hfc, context),
-    _parallel_construction(num_hyperedges, _flow_hg, _parallel_hfc, context) {
+    _parallel_construction(num_hyperedges, _flow_hg, _parallel_hfc, context),
+    _flow_rebalancer(context) {
       _sequential_hfc.find_most_balanced = _context.refinement.flows.find_most_balanced_cut;
       _sequential_hfc.timer.active = false;
       _sequential_hfc.forceSequential(true);
@@ -134,9 +133,6 @@ class FlowRefiner final : public IFlowRefiner {
   ParallelConstruction<GraphAndGainTypes> _parallel_construction;
 
   size_t _total_iteration;
-  size_t _rebalanced_result_iteration;
-  HyperedgeWeight _rebalanced_value;
-  HyperedgeWeight _rebalanced_gain;
-  vec<Move> _rebalanced_moves;
+  FlowRebalancer<GraphAndGainTypes> _flow_rebalancer;
 };
 }  // namespace mt_kahypar
