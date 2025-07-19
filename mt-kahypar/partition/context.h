@@ -203,7 +203,9 @@ std::ostream& operator<<(std::ostream& out, const NLevelGlobalRefinementParamete
 
 struct FlowParameters {
   FlowAlgorithm algorithm = FlowAlgorithm::do_nothing;
-  bool rebalancing;
+  bool rebalancing = false;
+  bool abort_directly_after_rebalancing = false;
+  bool abort_on_rebalanced_candidate_cut = false;
   double alpha = 0.0;
   HypernodeID max_num_pins = std::numeric_limits<HypernodeID>::max();
   bool find_most_balanced_cut = false;

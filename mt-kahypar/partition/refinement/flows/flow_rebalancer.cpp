@@ -38,7 +38,7 @@ void FlowRebalancer<GraphAndGainTypes>::initialize(
   });
   _phg_rebalancing_copy.initializePartition();
 
-  _initial_quality = metrics::quality(phg, _context, false);
+  _initial_quality = metrics::quality(_phg_rebalancing_copy, _context, false);
   _current_quality = _initial_quality;
 
   _gain_cache = std::make_unique<GainCache>();
@@ -48,8 +48,8 @@ void FlowRebalancer<GraphAndGainTypes>::initialize(
 
   _total_iteration = 0;
   _rebalancing_result_iteration = 0;
-  _best_rebalancing_gain = 0;
   _best_rebalancing_value = 0;
+  _best_rebalancing_gain = 0;
   _best_rebalancing_moves.clear();
 }
 

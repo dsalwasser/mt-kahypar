@@ -630,6 +630,14 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.flows.rebalancing :
                       &context.refinement.flows.rebalancing))->value_name("<bool>"),
              "If true, flow rebalancing is enabled")
+             ((initial_partitioning ? "i-r-flow-abort-directly-after-rebalancing" : "r-flow-abort-directly-after-rebalancing"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.flows.abort_directly_after_rebalancing :
+                      &context.refinement.flows.abort_directly_after_rebalancing))->value_name("<bool>"),
+             "If true, abort after finding a improved rebalanced solution")
+             ((initial_partitioning ? "i-r-flow-abort-on-rebalanced-candidate-cut" : "r-flow-abort-on-rebalanced-candidate-cut"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.flows.abort_on_rebalanced_candidate_cut :
+                      &context.refinement.flows.abort_on_rebalanced_candidate_cut))->value_name("<bool>"),
+             "If true, abort after finding a candidate cut through flow rebalancing")
             ((initial_partitioning ? "i-r-flow-parallel-search-multiplier" : "r-flow-parallel-search-multiplier"),
              po::value<double>((initial_partitioning ? &context.initial_partitioning.refinement.flows.parallel_searches_multiplier :
                       &context.refinement.flows.parallel_searches_multiplier))->value_name("<double>"),

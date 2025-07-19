@@ -127,7 +127,8 @@ bool FlowRefiner<GraphAndGainTypes>::runFlowCutter(const FlowProblem& flow_probl
   const HyperedgeWeight max_block1_weight = _context.partition.max_part_weights[_block_1];
 
   if (_context.refinement.flows.rebalancing) {
-    _flow_rebalancer.initialize(*_phg, _block_0, _block_1, sequential, _flow_hg, _sequential_hfc, _parallel_hfc, _whfc_to_node);
+    _flow_rebalancer.initialize(*_phg, _block_0, _block_1, sequential,
+      _flow_hg, _sequential_hfc, _parallel_hfc, _whfc_to_node);
   }
 
   size_t iteration = 0;
@@ -160,6 +161,25 @@ bool FlowRefiner<GraphAndGainTypes>::runFlowCutter(const FlowProblem& flow_probl
     } else {
       if (_context.refinement.flows.rebalancing) {
         _flow_rebalancer.rebalance();
+
+        if (_context.refinement.flows.abort_directly_after_rebalancing) {
+          if (_flow_rebalancer.success()) {
+            return false;
+          }
+        } else if (_context.refinement.flows.abort_on_rebalanced_candidate_cut) {
+          HyperedgeWeight current_new_cut = flow_problem.non_removable_cut;
+          if (sequential) {
+            current_new_cut += _sequential_hfc.cs.flow_algo.flow_value;
+          } else {
+            current_new_cut += _parallel_hfc.cs.flow_algo.flow_value;
+          }
+
+          const HyperedgeWeight current_expected_gain = flow_problem.total_cut - current_new_cut;
+          const HyperedgeWeight current_expected_value = _flow_rebalancer.initial_value() - current_expected_gain;
+          if (_flow_rebalancer.success() && _flow_rebalancer.value() <= current_expected_value) {
+            return false;
+          }
+        }
       }
 
       if (cs.side_to_pierce == 0) {
@@ -177,7 +197,8 @@ bool FlowRefiner<GraphAndGainTypes>::runFlowCutter(const FlowProblem& flow_probl
   };
 
   DBG << "Starting refinement for block pair" << _block_0 << "and" << _block_1
-      << "with an initial local cut of " << flow_problem.total_cut;
+      << "with an initial local cut of" << flow_problem.total_cut;
+  _total_iteration = 0;
 
   bool result = false;
   if (sequential) {

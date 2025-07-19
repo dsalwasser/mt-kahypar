@@ -52,12 +52,20 @@ public:
     return _best_rebalancing_gain;
   }
 
+  [[nodiscard]] HyperedgeWeight value() const {
+    return _best_rebalancing_value;
+  }
+
+  [[nodiscard]] HyperedgeWeight initial_value() const {
+    return _initial_quality;
+  }
+
   [[nodiscard]] Result result() const {
     return {
-        _rebalancing_result_iteration,
-        _best_rebalancing_gain,
-        _best_rebalancing_value,
-        _best_rebalancing_moves,
+        .result_iteration = _rebalancing_result_iteration,
+        .value = _best_rebalancing_value,
+        .gain = _best_rebalancing_gain,
+        .moves = _best_rebalancing_moves,
     };
   }
 
